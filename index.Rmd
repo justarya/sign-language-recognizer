@@ -1,0 +1,164 @@
+---
+title: "Sign Language Recognizer"
+author: "Arya"
+date: "8/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(keras)
+library(dplyr)
+library(caret)
+library(readr)
+```
+
+Kali ini, kita akan membuat _Sign Language recognizer_ menggunakan metode _Machine Learning_ bernama Neural Network. 
+
+Kita akan menggunakan dataset MNIST, yakni data berisi ribuan gambar bahasa isyarat atau _Sign Language_ dari berbagai jenis tangan. Kita akan membuat sebuah model Machine Learning yang nantinya dapat mengenali bahasa isyarat dari A sampai Z dengan belajar dari informasi yang diberikan.
+
+# Import Data
+
+```{r}
+sign <- read.csv("data/sign_mnist_train.csv")
+```
+
+```{r}
+head(sign)
+```
+
+Dari data diatas, bisa dilihat total column berjumlah sebanyak 785. Yang terdiri dari satu label dan 784 pixel atau gambar (28x28)
+
+```{r, include=FALSE}
+vizTrain <- function(input){
+  
+  dimmax <- sqrt(ncol(input[,-1]))
+  
+  dimn <- ceiling(sqrt(nrow(input)))
+  par(mfrow=c(dimn, dimn), mar=c(.1, .1, .1, .1))
+  
+  for (i in 1:nrow(input)){
+      m1 <- as.matrix(input[i,2:785])
+      dim(m1) <- c(28,28)
+      
+      m1 <- apply(apply(m1, 1, rev), 1, t)
+      
+      image(1:28, 1:28, 
+            m1, col=grey.colors(255), 
+            # remove axis text
+            xaxt = 'n', yaxt = 'n')
+      text(2, 20, col="black", cex=1.2, input[i, 1])
+  }
+}
+```
+
+```{r}
+vizTrain(head(sign, 9))
+```
+
+
+
+
+```{r}
+set.seed(123)
+idx <- sample(nrow(sign), nrow(sign)*0.8)
+sign.train <- sign[idx,]
+sign.test <- sign[-idx,]
+```
+
+
+```{r}
+target <- "label"
+```
+
+
+```{r}
+sign.train.x.keras <- sign.train %>% 
+  select(-target) %>%
+  as.matrix() / 255
+sign.train.x.keras <- array_reshape(
+  x=sign.train.x.keras,
+  dim = dim(sign.train.x.keras)
+)
+sign.test.x.keras <- sign.test %>% 
+  select(-target) %>% 
+  as.matrix() / 255
+sign.test.x.keras <- array_reshape(
+  x=sign.test.x.keras,
+  dim = dim(sign.test.x.keras)
+)
+
+sign.train.y.keras <- sign.train$label
+sign.test.y.keras <- sign.test$label
+
+sign.train.y.keras <- to_categorical(
+  y=sign.train.y.keras,
+  num_classes=dim(sign.train.y.keras)
+)
+```
+
+```{r}
+tensorflow::tf$random$set_seed(123)
+
+inputshape <- ncol(sign.train.x.keras)
+outputshape <- ncol(sign.train.y.keras)
+
+model <- keras_model_sequential(name="model-sign") %>% 
+  layer_dense(
+    units=128,
+    input_shape=inputshape,
+    activation = "relu",
+    name="hidden-1"
+  ) %>%
+  layer_dense(
+    units=64,
+    activation = "relu",
+    name="hidden-2"
+  ) %>% 
+  layer_dense(
+    units=32,
+    activation = "relu",
+    name="hidden-3"
+  ) %>% 
+  layer_dense(
+    units=16,
+    activation = "relu",
+    name="hidden-4"
+  ) %>% 
+  layer_dense(
+    units=outputshape,
+    activation = "softmax",
+    name="output-1"
+  )
+```
+
+```{r}
+model %>% 
+  compile(
+    loss = "categorical_crossentropy",
+    optimizer=optimizer_adam(lr=0.001),
+    metrics="accuracy"
+  )
+```
+
+```{r}
+hist <- model %>% 
+  fit(
+    x=sign.train.x.keras,
+    y=sign.train.y.keras,
+    epochs=15,
+    batch_size=32,
+    validation_split=0.1
+  )
+
+plot(hist)
+```
+
+```{r}
+result <- predict_classes(model, sign.test.x.keras)
+```
+
+```{r}
+confusionMatrix(as.factor(result), as.factor(sign.test.y.keras))
+```
+
