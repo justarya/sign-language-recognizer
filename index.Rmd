@@ -1,8 +1,15 @@
 ---
 title: "Sign Language Recognizer"
 author: "Arya"
-date: "8/8/2020"
-output: html_document
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    highlight: zenburn
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -23,11 +30,80 @@ Kita akan menggunakan dataset MNIST, yakni data berisi ribuan gambar bahasa isya
 sign <- read.csv("data/sign_mnist_train.csv")
 ```
 
+# Exploratory Data Analytics (EDA)
+
 ```{r}
-head(sign)
+head(sign)[,1:9]
 ```
 
-Dari data diatas, bisa dilihat total column berjumlah sebanyak 785. Yang terdiri dari satu label dan 784 pixel atau gambar (28x28)
+```{r}
+dim(sign)
+```
+
+
+Dari data diatas, bisa dilihat total column berjumlah sebanyak 785. Yang terdiri dari satu label dan 784 pixel atau gambar (28x28).
+
+Pada kolom label diatas terdiri dari 0-25, yang memiliki arti
+
+0 = A  
+1 = B  
+2 = C  
+3 = D  
+4 = E  
+5 = F  
+6 = G  
+7 = H  
+8 = I  
+9 = J  
+10 = K  
+11 = L  
+12 = M  
+13 = N  
+14 = O  
+15 = P  
+16 = Q  
+17 = R  
+18 = S  
+19 = T  
+20 = U  
+21 = V  
+22 = W  
+23 = X  
+24 = Y  
+25 = Z  
+
+Karena `label` target terdiri dari angka, mari kita buat kamus untuk mengubahnya menjadi arti sebenarnya yaitu Huruf A-Z.
+
+```{r}
+label_mapping <- c(
+  "0" = "A",
+  "1" = "B",
+  "2" = "C",
+  "3" = "D",
+  "4" = "E",
+  "5" = "F",
+  "6" = "G",
+  "7" = "H",
+  "8" = "I",
+  "9" = "J",
+  "10" = "K",
+  "11" = "L",
+  "12" = "M",
+  "13" = "N",
+  "14" = "O",
+  "15" = "P",
+  "16" = "Q",
+  "17" = "R",
+  "18" = "S",
+  "19" = "T",
+  "20" = "U",
+  "21" = "V",
+  "22" = "W",
+  "23" = "X",
+  "24" = "Y",
+  "25" = "Z"
+)
+```
 
 ```{r, include=FALSE}
 vizTrain <- function(input){
@@ -52,12 +128,51 @@ vizTrain <- function(input){
 }
 ```
 
+Jika divisualisasikan data kita akan berbentuk seperti berikut.
+
 ```{r}
-vizTrain(head(sign, 9))
+vizTrain(
+  sign %>% 
+    head(9) %>% 
+    mutate(
+      label = label_mapping[as.character(label)] %>% 
+        as.vector()
+    )
+)
 ```
 
+# Data Preprocessing
 
+## Data labeling
 
+Target pada data dilabel menggunakan angka, agar mempermudah untuk menginterpretasi dan membaca hasil prediksi. Marilah kita melabel data target.
+
+```{r}
+sign <- sign %>% 
+  mutate(
+    label_char = label_mapping[as.character(label)] %>% 
+      as.vector() %>% 
+      as.factor()
+  )
+```
+
+```{r}
+sign %>% 
+  head() %>% 
+  select(label, label_char)
+```
+
+## Check data distribution
+
+```{r}
+prop.table(table(sign$label_char))
+```
+
+Jika dilihat dari distribusi data target, proporsi per category sekitar 0.4 yang berarti cukup seimbang.
+
+## Cross validation
+
+Selanjutnya kita akan membagi data kita menjadi 80% data _train_ dan 20% data _test_.
 
 ```{r}
 set.seed(123)
@@ -66,11 +181,19 @@ sign.train <- sign[idx,]
 sign.test <- sign[-idx,]
 ```
 
+## Data preperation
+
+Sebelum membuat model, ada beberapa hal yang perlu dilakukan untuk mempersiapkan data:
+
+1. Memisahkan prediktor dengan target variabel
+2. Mengubah prediktor menjadi matrix/array
+3. Melakukan one-hot encoding apabila target variabel adalah kategori
+
+Karena prediktornya adalah nilai kecerahan dari tiap pixel, kita tahu bahwa range nilainya bisa antara 0 hingga 255. Setiap pixel akan di-scaling dengan membagi nilai pixel terhadap 255. Setelah di-scaling, tiap kolom prediktor akan memiliki range antara 0-1.
 
 ```{r}
-target <- "label"
+target <- c("label", "label_char")
 ```
-
 
 ```{r}
 sign.train.x.keras <- sign.train %>% 
@@ -89,13 +212,25 @@ sign.test.x.keras <- array_reshape(
 )
 
 sign.train.y.keras <- sign.train$label
-sign.test.y.keras <- sign.test$label
+sign.test.y.keras <- sign.test %>% 
+  select(label, label_char)
 
 sign.train.y.keras <- to_categorical(
   y=sign.train.y.keras,
   num_classes=dim(sign.train.y.keras)
 )
 ```
+
+# Build Model
+
+## Create Neural Network Architecture
+
+Langkah selanjutnya adalah membangun arsitektur Neural Network. Beberapa ketentuan ketika membuat arsitektur Neural Network:
+
+1. Selalu diawali `keras_model_sequential()`
+2. Layer pertama yang dibuat akan menjadi hidden layer pertama
+3. Input layer dibuat dengan memasukkan parameter `input_shape` pada layer pertama
+4. Layer terakhir yang dibuat akan menjadi output layer
 
 ```{r}
 tensorflow::tf$random$set_seed(123)
@@ -106,7 +241,7 @@ outputshape <- ncol(sign.train.y.keras)
 model <- keras_model_sequential(name="model-sign") %>% 
   layer_dense(
     units=128,
-    input_shape=inputshape,
+    input_shape = inputshape,
     activation = "relu",
     name="hidden-1"
   ) %>%
@@ -132,6 +267,16 @@ model <- keras_model_sequential(name="model-sign") %>%
   )
 ```
 
+## Compile model
+
+Langkah berikutnya adalah menentukan error function, optimizer, dan metrics yang akan ditunjukkan selama training.
+
+Kita akan menggunakan
+loss = `categorical_crossentropy`
+optimizer = `adam`
+learning rate = `0.001`
+metrics = `accuracy`
+
 ```{r}
 model %>% 
   compile(
@@ -141,24 +286,96 @@ model %>%
   )
 ```
 
-```{r}
+## Train model
+
+Dan tidak kalah penting, kita harus melatih model dengan data train yang telah dipersiapkan.
+Model kita akan ditrain menggunakan `epochs` sebesar `15`, `batch_size` sebesar `32` dan `validation_split` sebesar `0.1`
+
+```
 hist <- model %>% 
   fit(
     x=sign.train.x.keras,
     y=sign.train.y.keras,
     epochs=15,
-    batch_size=32,
+    batch_size=16,
     validation_split=0.1
   )
+
+saveRDS(hist, "model.RDS")
+```
+
+```{r}
+hist <- readRDS("model.RDS")
 
 plot(hist)
 ```
 
+# Validate Model
+
+Setelah membuat model, langkah terakhir adalah memvalidasi modelnya.
+
+## Predict
+
+Pertama, marilah kita buat prediksi dari data test menggunakan model yang baru kita buat.
+
 ```{r}
 result <- predict_classes(model, sign.test.x.keras)
+
+result <- label_mapping[as.character(result)] %>% 
+  as.vector() %>% 
+  as.factor()
+```
+
+## Confusion Matrix
+
+Selanjutnya marilah kita mengetest ke akurasi hasil prediksi data test kita menggunakan confusion matrix.
+
+```{r}
+confusionMatrix(result, sign.test.y.keras$label_char)
+```
+
+Jika dilihat dari confussion matrix diatas, model kita mendapat 0.9752 yang artinya mendapat akurasi sebesar 97.52% atau sangat akurat.
+
+## False Prediciton
+
+Berikut beberapa prediksi yang salah.
+
+```{r, include=FALSE}
+vizTest <- function(input){
+  
+  dimmax <- sqrt(ncol(input[,-1]))
+  
+  dimn <- ceiling(sqrt(nrow(input)))
+  par(mfrow=c(dimn, dimn), mar=c(.1, .1, .1, .1))
+  
+  for (i in 1:nrow(input)){
+      m1 <- as.matrix(input[i,2:785])
+      dim(m1) <- c(28,28)
+      
+      m1 <- apply(apply(m1, 1, rev), 1, t)
+      
+      image(1:28, 1:28, 
+            m1, col=grey.colors(255), 
+            # remove axis text
+            xaxt = 'n', yaxt = 'n')
+      # text(2, 20, col="black", cex=1.2, input[i, 1])
+      text(2, 20, col="blue", cex=1.2, input[i, 786])
+      text(4, 20, col="red", cex=1.2, input[i, 787])
+  }
+}
 ```
 
 ```{r}
-confusionMatrix(as.factor(result), as.factor(sign.test.y.keras))
+result.false <- sign.test %>% 
+  mutate(
+    label_pred = result,
+  ) %>% 
+  filter(as.character(label_pred) != as.character(label_char)) %>% 
+  head(9)
+
+vizTest(result.false)
 ```
 
+# Conclusion
+
+Dalam memprediksi bahasa isyarat, model _Neural Network_ sangatlah cocok. Dan mendapatkan akurasi sebesar 97.52%.
